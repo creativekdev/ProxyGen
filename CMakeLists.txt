@@ -25,12 +25,12 @@ foreach(_root IN LISTS _pg_roots)
       list(APPEND CMAKE_PREFIX_PATH "${_child}")
     endif()
   endforeach()
-  file(GLOB_RECURSE _find_sodium "${_root}/*FindSodium.cmake")
-  foreach(_fs ${_find_sodium})
-    get_filename_component(_fs_dir "${_fs}" DIRECTORY)
-    list(APPEND CMAKE_MODULE_PATH "${_fs_dir}")
-  endforeach()
 endforeach()
+
+# Ship our own FindSodium.cmake (first on the module path) so fizz's transitive
+# find_dependency(Sodium) always resolves, regardless of how getdeps laid out
+# fizz's own copy.
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if(CMAKE_PREFIX_PATH)
   list(REMOVE_DUPLICATES CMAKE_PREFIX_PATH)
 endif()
