@@ -84,7 +84,7 @@ tar -czf "$OUT" -C "$ROOT" \
   --exclude='./.git' \
   --exclude='./data' \
   --exclude='./build' \
-  ./src ./static ./CMakeLists.txt ./run.sh ./README.md \
+  ./src ./static ./CMakeLists.txt ./run.sh ./README.md ./DEV-OFFLINE.md \
   ./offline/offline-build.sh ./offline/package-portable.sh \
   ./offline/debs ./offline/runtime-libs \
   ./bin ./.deps/install "${EXTRA[@]}"
@@ -92,6 +92,9 @@ tar -czf "$OUT" -C "$ROOT" \
 echo
 echo "==> Done."
 echo "    Bundle: $OUT ($(du -h "$OUT" | cut -f1))"
-echo "    Copy it to the air-gapped machine, extract, and run:"
-echo "        ./offline/offline-build.sh     # recompile the app offline, OR"
-echo "        ./run.sh                        # run the prebuilt binary directly"
+echo
+echo "    This is the EDIT-AND-BUILD bundle — send it to a friend who wants to"
+echo "    customize the code offline. After they extract it, they should read"
+echo "    DEV-OFFLINE.md, then:"
+echo "        ./run.sh                        # run the prebuilt binary directly, OR"
+echo "        ./offline/offline-build.sh      # rebuild after editing src/, then ./run.sh"
