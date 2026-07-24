@@ -37,6 +37,18 @@ add_executable(server
 
 target_include_directories(server PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Embed an RPATH to the Proxygen install prefix so the binary finds its shared
+# libraries without needing LD_LIBRARY_PATH set. Derived from CMAKE_PREFIX_PATH.
+set(_rpaths "")
+foreach(_p IN LISTS CMAKE_PREFIX_PATH)
+  list(APPEND _rpaths "${_p}/lib" "${_p}/lib64")
+endforeach()
+if(_rpaths)
+  set_target_properties(server PROPERTIES
+    BUILD_RPATH "${_rpaths}"
+    INSTALL_RPATH "${_rpaths}")
+endif()
+
 target_link_libraries(server PRIVATE
   proxygen::proxygenhttpserver
   proxygen::proxygen

@@ -1,6 +1,9 @@
 # Build output
 build/
 
+# Locally-built Proxygen source + install prefix (from build.sh)
+.deps/
+
 # Runtime data (SQLite database + WAL files)
 data/
 *.db

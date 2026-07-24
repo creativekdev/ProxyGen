@@ -1,0 +1,6 @@
+# These run on Ubuntu — keep LF endings even when edited/checked out on Windows.
+*.sh    text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+Dockerfile text eol=lf
+CMakeLists.txt text eol=lf
