@@ -42,7 +42,7 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Build Proxygen once, into $PROXYGEN_PREFIX. Skip if already installed.
 # ---------------------------------------------------------------------------
-if [ -f "$PROXYGEN_PREFIX/include/proxygen/httpserver/HTTPServer.h" ]; then
+if [ -d "$PROXYGEN_PREFIX" ] && find "$PROXYGEN_PREFIX" -name 'proxygen-config.cmake' 2>/dev/null | grep -q .; then
   echo "==> Proxygen already installed at $PROXYGEN_PREFIX — skipping build."
 else
   echo "==> Fetching facebook/proxygen ($PROXYGEN_REF)…"
