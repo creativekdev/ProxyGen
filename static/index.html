@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Proxygen Auth</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Proxygen Auth</h1>
+
+      <!-- Logged-out view: login / signup tabs -->
+      <section id="auth-view">
+        <div class="tabs">
+          <button id="tab-login" class="tab active" type="button">Log in</button>
+          <button id="tab-signup" class="tab" type="button">Sign up</button>
+        </div>
+
+        <form id="auth-form" autocomplete="off">
+          <label>
+            Username
+            <input id="username" name="username" type="text" required
+                   minlength="3" maxlength="64" placeholder="your name" />
+          </label>
+          <label>
+            Password
+            <input id="password" name="password" type="password" required
+                   minlength="8" maxlength="256" placeholder="at least 8 chars" />
+          </label>
+          <button id="submit-btn" type="submit">Log in</button>
+        </form>
+        <p id="message" class="message" role="status"></p>
+      </section>
+
+      <!-- Logged-in view -->
+      <section id="user-view" hidden>
+        <p class="welcome">Signed in as <strong id="who"></strong> 🎉</p>
+        <button id="logout-btn" type="button">Log out</button>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

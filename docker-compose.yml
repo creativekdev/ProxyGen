@@ -1,0 +1,19 @@
+# Convenience wrapper so you can `docker compose up` on Windows or Ubuntu.
+services:
+  server:
+    build:
+      context: .
+      # To pin a specific Proxygen release instead of `main`:
+      # args:
+      #   PROXYGEN_REF: v2025.01.06.00
+    image: proxygen-auth:latest
+    container_name: proxygen-auth
+    ports:
+      - "8080:8080"
+    volumes:
+      # Named volume keeps the SQLite DB across container restarts / rebuilds.
+      - auth-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  auth-data:

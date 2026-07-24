@@ -1,0 +1,15 @@
+# Build output
+build/
+
+# Runtime data (SQLite database + WAL files)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

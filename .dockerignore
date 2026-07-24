@@ -1,0 +1,9 @@
+.git
+build/
+data/
+*.db
+*.db-wal
+*.db-shm
+README.md
+docker-compose.yml
+.gitignore
