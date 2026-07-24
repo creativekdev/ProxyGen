@@ -9,8 +9,38 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# --- Resolve getdeps' multi-prefix install layout ---------------------------
+# getdeps installs each dependency into its OWN subdirectory of the prefix
+# (e.g. <prefix>/folly, <prefix>/fizz, <prefix>/libsodium) rather than a single
+# merged tree. So we must:
+#   1. add every such subdirectory to CMAKE_PREFIX_PATH, so config packages AND
+#      transitive find_library() calls (libsodium, zstd, …) resolve, and
+#   2. put fizz's bundled FindSodium.cmake on CMAKE_MODULE_PATH, so the
+#      transitive find_dependency(Sodium) from fizz-config.cmake succeeds.
+set(_pg_roots ${CMAKE_PREFIX_PATH})
+foreach(_root IN LISTS _pg_roots)
+  file(GLOB _children LIST_DIRECTORIES true "${_root}/*")
+  foreach(_child ${_children})
+    if(IS_DIRECTORY "${_child}")
+      list(APPEND CMAKE_PREFIX_PATH "${_child}")
+    endif()
+  endforeach()
+  file(GLOB_RECURSE _find_sodium "${_root}/*FindSodium.cmake")
+  foreach(_fs ${_find_sodium})
+    get_filename_component(_fs_dir "${_fs}" DIRECTORY)
+    list(APPEND CMAKE_MODULE_PATH "${_fs_dir}")
+  endforeach()
+endforeach()
+if(CMAKE_PREFIX_PATH)
+  list(REMOVE_DUPLICATES CMAKE_PREFIX_PATH)
+endif()
+if(CMAKE_MODULE_PATH)
+  list(REMOVE_DUPLICATES CMAKE_MODULE_PATH)
+endif()
+message(STATUS "CMAKE_PREFIX_PATH = ${CMAKE_PREFIX_PATH}")
+message(STATUS "CMAKE_MODULE_PATH = ${CMAKE_MODULE_PATH}")
+
 # Proxygen's exported CMake config pulls in folly/wangle/fizz transitively.
-# Point CMAKE_PREFIX_PATH at the install prefix (see Dockerfile: /opt/pg).
 find_package(proxygen CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 
