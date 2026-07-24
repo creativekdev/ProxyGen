@@ -48,7 +48,14 @@ cp -f "$ROOT/build/server" "$ROOT/bin/server"
 echo "==> [2/4] Downloading .deb packages for an offline recompile…"
 mkdir -p "$DEB_DIR"
 sudo apt-get update
-PKGS="cmake ninja-build build-essential g++ pkg-config libsqlite3-dev libssl-dev"
+# Build tools + every system -dev library the app's final link needs. The list
+# below matches the system libraries seen in the actual link command (folly/
+# proxygen pull these in transitively); without them an offline rebuild fails
+# with "cannot find -lXXX".
+PKGS="cmake ninja-build build-essential g++ pkg-config \
+  libsqlite3-dev libssl-dev libgflags-dev libc-ares-dev libevent-dev \
+  zlib1g-dev libbz2-dev liblz4-dev libzstd-dev libsnappy-dev \
+  libdwarf-dev libaio-dev libsodium-dev libdouble-conversion-dev"
 # Resolve the recursive dependency closure and fetch each as a .deb.
 DEB_LIST="$(apt-cache depends --recurse --no-recommends --no-suggests \
   --no-conflicts --no-breaks --no-replaces --no-enhances $PKGS \
@@ -84,7 +91,7 @@ tar -czf "$OUT" -C "$ROOT" \
   --exclude='./.git' \
   --exclude='./data' \
   --exclude='./build' \
-  ./src ./static ./CMakeLists.txt ./run.sh ./README.md ./DEV-OFFLINE.md \
+  ./src ./cmake ./static ./CMakeLists.txt ./run.sh ./README.md ./DEV-OFFLINE.md \
   ./offline/offline-build.sh ./offline/package-portable.sh \
   ./offline/debs ./offline/runtime-libs \
   ./bin ./.deps/install "${EXTRA[@]}"
