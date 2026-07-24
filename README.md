@@ -47,6 +47,86 @@ JOBS=4 ./build.sh                         # limit parallelism (less RAM)
 PROXYGEN_PREFIX=/opt/pg ./build.sh        # install Proxygen elsewhere
 ```
 
+## Offline use & sending it to someone else
+
+All network access is at **build** time (apt, `git clone`, and `getdeps.py`
+downloading dependency sources). **Running needs no network at all.** So the way
+to go offline is: do the networked build once on an online machine, then ship an
+artifact. There are three artifacts depending on what the recipient will do.
+
+> **Same-machine rule:** any prebuilt artifact only works on a machine with the
+> **same CPU architecture** and a **glibc no older** than the build machine's
+> (in practice: same Ubuntu major version). Compiled libraries don't port across
+> those. If in doubt, build on the oldest Ubuntu version you need to support.
+
+### Mode 1 — "just run it" (best for sending to a friend)
+
+Produces one self-contained tarball: the binary + every non-glibc shared library
+it needs + the web UI + a launcher. The recipient needs **no build tools, no
+internet, no installs**.
+
+```bash
+# On your machine, after ./build.sh:
+./offline/package-portable.sh
+# → proxygen-portable-amd64.tar.gz
+```
+
+Send that single file. Your friend runs:
+
+```bash
+tar -xzf proxygen-portable-amd64.tar.gz
+cd proxygen-portable-amd64
+./run.sh                      # → http://localhost:8080
+```
+
+### Mode 2 — recompile the app offline (recipient may edit `src/`)
+
+Ships Proxygen **prebuilt** plus the source and an offline compiler, so the
+target can rebuild *this app* (not Proxygen) with no network.
+
+```bash
+# Online machine:
+./offline/prefetch.sh          # → proxygen-offline-bundle.tar.gz
+```
+
+```bash
+# Air-gapped machine:
+mkdir proxygen && tar -xzf proxygen-offline-bundle.tar.gz -C proxygen && cd proxygen
+chmod +x run.sh offline/*.sh
+./run.sh                        # run the prebuilt binary immediately, OR
+./offline/offline-build.sh      # recompile the app, then ./run.sh
+```
+
+If the target already has `cmake`/`ninja`/`g++` + sqlite3/openssl dev headers:
+`SKIP_DEBS=1 ./offline/offline-build.sh`.
+
+### Mode 3 — rebuild Proxygen from source offline (fully from-scratch)
+
+Add `WITH_SOURCES=1` so the bundle also carries Proxygen's source and every
+dependency source `getdeps` downloaded. The target can then rebuild the whole
+stack with no network (slow, and best-effort — see caveat below).
+
+```bash
+# Online machine:
+WITH_SOURCES=1 ./offline/prefetch.sh
+```
+
+```bash
+# Air-gapped machine (inside the extracted bundle):
+REBUILD_PROXYGEN=1 ./offline/offline-build.sh && ./run.sh
+```
+
+### What each bundle contains
+
+| Path | Mode 1 | Mode 2 | Mode 3 |
+| --- | :--: | :--: | :--: |
+| `server` + bundled `lib/` (portable) | ✅ | — | — |
+| `.deps/install/` (Proxygen prebuilt) | — | ✅ | ✅ |
+| `bin/server` (app prebuilt) | — | ✅ | ✅ |
+| `offline/debs/` (offline compiler) | — | ✅ | ✅ |
+| `.deps/proxygen-src` + `.deps/scratch` (sources) | — | — | ✅ |
+| `src/`, `static/`, `CMakeLists.txt`, `run.sh` | — | ✅ | ✅ |
+
 ## Manual build (if you prefer not to use the script)
 
 ```bash

@@ -54,11 +54,21 @@ else
 
   GETDEPS="$PROXYGEN_SRC/build/fbcode_builder/getdeps.py"
 
+  # Optional: pin getdeps' scratch path. Set SCRATCH to keep all downloaded
+  # dependency sources in a known folder so they can be shipped for a fully
+  # offline from-source rebuild elsewhere (see offline/prefetch.sh WITH_SOURCES).
+  SCRATCH_ARG=()
+  if [ -n "${SCRATCH:-}" ]; then
+    mkdir -p "$SCRATCH"
+    SCRATCH_ARG=(--scratch-path "$SCRATCH")
+  fi
+
   echo "==> Installing Proxygen's system dependencies…"
-  python3 "$GETDEPS" --allow-system-packages install-system-deps --recursive proxygen
+  python3 "$GETDEPS" "${SCRATCH_ARG[@]}" --allow-system-packages \
+    install-system-deps --recursive proxygen
 
   echo "==> Building Proxygen + dependencies (this is the slow part)…"
-  python3 "$GETDEPS" --allow-system-packages build \
+  python3 "$GETDEPS" "${SCRATCH_ARG[@]}" --allow-system-packages build \
     --install-prefix "$PROXYGEN_PREFIX" \
     --num-jobs "$JOBS" \
     --no-tests \

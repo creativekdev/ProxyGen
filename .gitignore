@@ -4,6 +4,12 @@ build/
 # Locally-built Proxygen source + install prefix (from build.sh)
 .deps/
 
+# Offline bundle artifacts
+bin/
+offline/debs/
+offline/runtime-libs/
+*.tar.gz
+
 # Runtime data (SQLite database + WAL files)
 data/
 *.db
@@ -16,3 +22,6 @@ data/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Portable bundle output
+proxygen-portable-*/

@@ -11,14 +11,21 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROXYGEN_PREFIX="${PROXYGEN_PREFIX:-$HERE/.deps/install}"
 
-if [ ! -x "$HERE/build/server" ]; then
-  echo "server binary not found — run ./build.sh first" >&2
+# Prefer a freshly-built binary; fall back to the prebuilt one from an
+# offline bundle (bin/server).
+BIN="$HERE/build/server"
+[ -x "$BIN" ] || BIN="$HERE/bin/server"
+if [ ! -x "$BIN" ]; then
+  echo "server binary not found — run ./build.sh (online) or" >&2
+  echo "./offline/offline-build.sh (offline) first" >&2
   exit 1
 fi
 
-export LD_LIBRARY_PATH="$PROXYGEN_PREFIX/lib:$PROXYGEN_PREFIX/lib64:${LD_LIBRARY_PATH:-}"
+# Search paths for shared libs: the Proxygen prefix, plus the runtime-libs
+# folder that an offline bundle may ship for the prebuilt binary.
+export LD_LIBRARY_PATH="$PROXYGEN_PREFIX/lib:$PROXYGEN_PREFIX/lib64:$HERE/offline/runtime-libs:${LD_LIBRARY_PATH:-}"
 
-exec "$HERE/build/server" \
+exec "$BIN" \
   --host=0.0.0.0 \
   --port=8080 \
   --db="$HERE/data/users.db" \
