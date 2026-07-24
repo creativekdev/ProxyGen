@@ -36,7 +36,7 @@ if [ "${SKIP_APT:-0}" != "1" ]; then
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends \
     git cmake ninja-build build-essential python3 python3-pip pkg-config \
-    ca-certificates libsqlite3-dev libssl-dev
+    ca-certificates libsqlite3-dev libssl-dev libc-ares-dev
 fi
 
 # ---------------------------------------------------------------------------
