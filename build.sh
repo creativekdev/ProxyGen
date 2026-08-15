@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Native build for Ubuntu (also works on Debian/most Linux, and macOS).
+# Native build for Ubuntu/Debian AND RHEL 9 family (CentOS Stream 9, Rocky 9,
+# AlmaLinux 9). The distro is detected automatically; apt or dnf is used
+# accordingly.
 #
 # What it does:
 #   1. Installs the host packages this app links against (sqlite3, openssl, cmake…)
@@ -14,16 +16,20 @@
 # Usage:
 #   ./build.sh                 # full build
 #   PROXYGEN_REF=v2025.01.06.00 ./build.sh   # pin a Proxygen release
-#   SKIP_APT=1 ./build.sh      # don't run apt (deps already installed)
+#   SKIP_PKGS=1 ./build.sh     # don't install packages (deps already present)
+#                              # (SKIP_APT=1 still works as an alias)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=offline/common.sh
+. "$HERE/offline/common.sh"
 
 PROXYGEN_REF="${PROXYGEN_REF:-main}"
 PROXYGEN_SRC="${PROXYGEN_SRC:-$HERE/.deps/proxygen-src}"
 PROXYGEN_PREFIX="${PROXYGEN_PREFIX:-$HERE/.deps/install}"
 JOBS="${JOBS:-$(nproc)}"
 
+echo "==> Distro:           $(os_pretty) [$(pkg_family)]  glibc $(glibc_version)"
 echo "==> Proxygen ref:     $PROXYGEN_REF"
 echo "==> Install prefix:   $PROXYGEN_PREFIX"
 echo "==> Parallel jobs:    $JOBS"
@@ -31,12 +37,14 @@ echo "==> Parallel jobs:    $JOBS"
 # ---------------------------------------------------------------------------
 # 1. Host packages this app needs directly (Proxygen pulls its own via getdeps).
 # ---------------------------------------------------------------------------
-if [ "${SKIP_APT:-0}" != "1" ]; then
-  echo "==> Installing host build packages (sudo apt-get)…"
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends \
-    git cmake ninja-build build-essential python3 python3-pip pkg-config \
-    ca-certificates libsqlite3-dev libssl-dev libc-ares-dev
+if [ "${SKIP_PKGS:-${SKIP_APT:-0}}" != "1" ]; then
+  echo "==> Installing host build packages…"
+  case "$(pkg_family)" in
+    rpm) enable_rpm_repos ;;
+    deb) $SUDO apt-get update ;;
+  esac
+  # shellcheck disable=SC2046  # intentional word splitting of the package list
+  pkg_install $(build_pkgs)
 fi
 
 # ---------------------------------------------------------------------------
@@ -64,8 +72,12 @@ else
   fi
 
   echo "==> Installing Proxygen's system dependencies…"
+  # Best-effort: getdeps' package lists don't cover every distro perfectly (on
+  # EL9 a few names simply don't exist). Anything it can't install it compiles
+  # from source in the next step instead, so a failure here is not fatal.
   python3 "$GETDEPS" "${SCRATCH_ARG[@]}" --allow-system-packages \
-    install-system-deps --recursive proxygen
+    install-system-deps --recursive proxygen \
+    || echo "   (some system deps unavailable — getdeps will build them from source)"
 
   echo "==> Building Proxygen + dependencies (this is the slow part)…"
   python3 "$GETDEPS" "${SCRATCH_ARG[@]}" --allow-system-packages build \

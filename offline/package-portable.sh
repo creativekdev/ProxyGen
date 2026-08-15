@@ -8,11 +8,14 @@
 # build tools, no internet, no dependency install.
 #
 # Portability: works on any same-ARCHITECTURE Linux whose glibc is the same or
-# newer than this build machine's. (glibc is intentionally NOT bundled — it is
-# tied to the kernel/loader and must come from the target system.)
+# newer than this build machine's. (glibc — and libgcc_s, which is built against
+# it — are intentionally NOT bundled: they are tied to the kernel/loader and
+# must come from the target system.)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=common.sh
+. "$ROOT/offline/common.sh"
 
 BIN="$ROOT/build/server"
 [ -x "$BIN" ] || BIN="$ROOT/bin/server"
@@ -21,9 +24,9 @@ if [ ! -x "$BIN" ]; then
   exit 1
 fi
 
-ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
-UBU="$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}")"
-NAME="proxygen-portable-${ARCH}"
+ARCH="$(uname -m)"
+DISTRO="$(os_pretty)"
+NAME="proxygen-portable-$(os_tag)-${ARCH}"
 DIST="$ROOT/$NAME"
 
 echo "==> Assembling portable bundle: $DIST"
@@ -36,10 +39,9 @@ echo "==> Collecting shared libraries (named by SONAME so the loader finds them)
 # ldd resolves the FULL transitive closure. $1 is the SONAME the binary asks for,
 # $3 is the real file on disk — copy the file but name it by its SONAME.
 ldd "$DIST/server" | awk '/=> \//{print $1" "$3}' | while read -r soname path; do
-  case "$soname" in
-    libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libresolv.so.*|ld-linux*|linux-vdso*)
-      continue ;;  # glibc core: leave it to the target system
-  esac
+  # glibc core (incl. libgcc_s): leave it to the target system — see
+  # is_system_soname() in common.sh for why libgcc_s must not be bundled.
+  if is_system_soname "$soname"; then continue; fi
   cp -Lf "$path" "$DIST/lib/$soname" 2>/dev/null || true
 done
 
@@ -60,7 +62,10 @@ chmod +x "$DIST/run.sh"
 
 cat > "$DIST/README.txt" <<EOF
 Proxygen Auth Server — portable build
-Built for: ${ARCH} / Ubuntu ${UBU} (any same-arch Linux with glibc >= this one)
+Built on: ${DISTRO} / ${ARCH} / glibc $(glibc_version)
+Runs on:  any same-arch Linux whose glibc is $(glibc_version) or NEWER.
+          (A build made on Ubuntu 22.04 = glibc 2.35 will NOT run on
+           CentOS Stream 9 / RHEL 9 = glibc 2.34. Build on EL9 for those.)
 
 RUN IT (no build, no internet, no installs):
     ./run.sh
@@ -70,8 +75,9 @@ Options:
     ./run.sh --port=9000        # use a different port
 Accounts are stored in ./data/users.db (created on first run).
 
-If you get "error while loading shared libraries", your system's glibc is older
-than the build machine's — ask for a build made on your Ubuntu version.
+If you get "error while loading shared libraries" or "version \`GLIBC_2.xx' not
+found", your system's glibc is older than the build machine's — ask for a build
+made on your distro version.
 EOF
 
 TARBALL="$ROOT/${NAME}.tar.gz"

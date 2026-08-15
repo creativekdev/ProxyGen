@@ -1,6 +1,7 @@
-# These run on Ubuntu — keep LF endings even when edited/checked out on Windows.
+# These run on Linux — keep LF endings even when edited/checked out on Windows.
+# (A CRLF .sh file fails on CentOS with "bad interpreter: /usr/bin/env bash^M".)
 *.sh    text eol=lf
 *.cpp   text eol=lf
 *.h     text eol=lf
-Dockerfile text eol=lf
+Dockerfile* text eol=lf
 CMakeLists.txt text eol=lf

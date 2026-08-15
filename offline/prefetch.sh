@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 #
 # STAGE 1 — run this on an ONLINE machine that MATCHES the air-gapped target
-#           (same Ubuntu major version + same CPU architecture).
+#           (same distro major version + same CPU architecture).
+#
+#           For a CentOS Stream 9 / RHEL 9 / Rocky 9 target, run this ON EL9 —
+#           its glibc is 2.34, older than Ubuntu 22.04's 2.35, and a bundle
+#           built on Ubuntu will not load there. See OFFLINE-CENTOS9.md, which
+#           also covers doing this in Docker from Windows.
 #
 # It produces a single self-contained bundle you copy to the offline machine:
 #   * .deps/install         — Proxygen + folly/wangle/fizz/mvfst, PREBUILT
 #   * bin/server            — this app, prebuilt (run immediately, no compile)
-#   * offline/debs/*.deb    — packages needed to (optionally) recompile offline
+#   * offline/debs/*.deb    — Ubuntu/Debian packages for an offline recompile
+#     offline/rpms/*.rpm    — …or the EL9 equivalents, depending on the distro
 #   * source + scripts
 #
 # On the air-gapped machine you then run offline/offline-build.sh (to recompile)
@@ -14,14 +20,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=common.sh
+. "$ROOT/offline/common.sh"
+
+FAMILY="$(pkg_family)"
 DEB_DIR="$ROOT/offline/debs"
-OUT="${OUT:-$ROOT/proxygen-offline-bundle.tar.gz}"
+RPM_DIR="$ROOT/offline/rpms"
+# Bundles are distro-specific, so the name carries the distro tag (el9,
+# ubuntu22.04, …). Override with OUT=… if you want a different path.
+OUT="${OUT:-$ROOT/proxygen-offline-bundle-$(os_tag).tar.gz}"
 
 echo "############################################################"
 echo "# STAGE 1: online prefetch"
-echo "# Ubuntu: $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
-echo "# Arch:   $(dpkg --print-architecture 2>/dev/null || uname -m)"
-echo "# The air-gapped machine MUST match the two lines above."
+echo "# Distro: $(os_pretty)  [$FAMILY]"
+echo "# glibc:  $(glibc_version)"
+echo "# Arch:   $(uname -m)"
+echo "# The air-gapped machine MUST match the lines above (its glibc"
+echo "# may be newer, never older)."
 echo "############################################################"
 
 # ---------------------------------------------------------------------------
@@ -42,37 +57,57 @@ mkdir -p "$ROOT/bin"
 cp -f "$ROOT/build/server" "$ROOT/bin/server"
 
 # ---------------------------------------------------------------------------
-# 2. Download the .deb closure needed to recompile the app on the offline box.
-#    (Only needed if the target lacks cmake/ninja/g++/dev headers. Optional.)
+# 2. Download the package closure needed to recompile the app on the offline
+#    box. (Only needed if the target lacks cmake/ninja/g++/dev headers.)
+#    The package list lives in offline/common.sh, one per distro family.
 # ---------------------------------------------------------------------------
-echo "==> [2/4] Downloading .deb packages for an offline recompile…"
-mkdir -p "$DEB_DIR"
-sudo apt-get update
-# Build tools + every system -dev library the app's final link needs. The list
-# below matches the system libraries seen in the actual link command (folly/
-# proxygen pull these in transitively); without them an offline rebuild fails
-# with "cannot find -lXXX".
-PKGS="cmake ninja-build build-essential g++ pkg-config \
-  libsqlite3-dev libssl-dev libgflags-dev libc-ares-dev libevent-dev \
-  zlib1g-dev libbz2-dev liblz4-dev libzstd-dev libsnappy-dev \
-  libdwarf-dev libaio-dev libsodium-dev libdouble-conversion-dev"
-# Resolve the recursive dependency closure and fetch each as a .deb.
-DEB_LIST="$(apt-cache depends --recurse --no-recommends --no-suggests \
-  --no-conflicts --no-breaks --no-replaces --no-enhances $PKGS \
-  | grep '^[[:alnum:]]' | sort -u)"
-( cd "$DEB_DIR" && apt-get download $DEB_LIST ) || \
-  echo "   (some virtual/base packages couldn't be fetched — usually fine)"
+PKGS="$(build_pkgs)"
+if [ "$FAMILY" = "rpm" ]; then
+  echo "==> [2/4] Downloading .rpm packages for an offline recompile…"
+  mkdir -p "$RPM_DIR"
+  $SUDO dnf -y install dnf-plugins-core || true
+  # --resolve pulls in dependencies; --alldeps includes the ones already
+  # installed HERE (the offline box won't have them, so we must ship them).
+  # No --arch: dnf picks this machine's arch plus noarch, which is what we want.
+  # shellcheck disable=SC2086
+  dnf download --resolve --alldeps --destdir "$RPM_DIR" $PKGS \
+    || {
+      echo "   (bulk download failed — retrying package by package)"
+      for p in $PKGS; do
+        dnf download --resolve --alldeps --destdir "$RPM_DIR" "$p" >/dev/null 2>&1 \
+          || echo "   skip: $p (unavailable)"
+      done
+    }
+  echo "    $(ls -1 "$RPM_DIR"/*.rpm 2>/dev/null | wc -l) rpm(s) cached in offline/rpms/"
+elif [ "$FAMILY" = "deb" ]; then
+  echo "==> [2/4] Downloading .deb packages for an offline recompile…"
+  mkdir -p "$DEB_DIR"
+  $SUDO apt-get update
+  # Resolve the recursive dependency closure and fetch each as a .deb.
+  # shellcheck disable=SC2086
+  DEB_LIST="$(apt-cache depends --recurse --no-recommends --no-suggests \
+    --no-conflicts --no-breaks --no-replaces --no-enhances $PKGS \
+    | grep '^[[:alnum:]]' | sort -u)"
+  # shellcheck disable=SC2086
+  ( cd "$DEB_DIR" && apt-get download $DEB_LIST ) || \
+    echo "   (some virtual/base packages couldn't be fetched — usually fine)"
+else
+  echo "==> [2/4] Unknown package manager — skipping offline package download."
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Also cache the runtime shared libraries the prebuilt binary needs, so the
 #    prebuilt bin/server runs even if the target is missing some runtime libs.
 # ---------------------------------------------------------------------------
 echo "==> [3/4] Collecting runtime shared libraries for the prebuilt binary…"
+rm -rf "$ROOT/offline/runtime-libs"
 mkdir -p "$ROOT/offline/runtime-libs"
-# Non-glibc libraries reported by ldd (we deliberately DO NOT bundle libc/ld).
+# Libraries reported by ldd, minus the ones that must come from the target's
+# own glibc stack (see SYSTEM_LIB_RE in common.sh — libgcc_s is one of them:
+# bundling it is what breaks a bundle on an older-glibc host).
 ldd "$ROOT/bin/server" 2>/dev/null \
   | awk '/=> \// {print $3}' \
-  | grep -Ev '/(libc|libm|libpthread|libdl|librt|ld-linux|libresolv)\.so' \
+  | grep -Ev "$SYSTEM_LIB_RE" \
   | sort -u \
   | while read -r lib; do cp -Lf "$lib" "$ROOT/offline/runtime-libs/" 2>/dev/null || true; done
 
@@ -84,16 +119,32 @@ EXTRA=()
 if [ "${WITH_SOURCES:-0}" = "1" ]; then
   # Ship Proxygen source + the getdeps scratch (downloaded dep sources) so the
   # target can rebuild Proxygen itself from source with no network.
-  [ -d "$ROOT/.deps/proxygen-src" ] && EXTRA+=(./.deps/proxygen-src)
-  [ -d "$ROOT/.deps/scratch" ]      && EXTRA+=(./.deps/scratch)
+  if [ -d "$ROOT/.deps/proxygen-src" ]; then EXTRA+=(./.deps/proxygen-src); fi
+  if [ -d "$ROOT/.deps/scratch" ];      then EXTRA+=(./.deps/scratch);      fi
 fi
+# Ship whichever package cache this distro produced.
+if [ -d "$DEB_DIR" ]; then EXTRA+=(./offline/debs); fi
+if [ -d "$RPM_DIR" ]; then EXTRA+=(./offline/rpms); fi
+# Record what this bundle was built on so the target can sanity-check itself.
+cat > "$ROOT/offline/BUNDLE-INFO.txt" <<EOF
+distro:  $(os_pretty)
+tag:     $(os_tag)
+family:  $FAMILY
+glibc:   $(glibc_version)
+arch:    $(uname -m)
+
+This bundle runs on the distro above, or any same-arch Linux whose glibc is the
+SAME OR NEWER. It will NOT load on a host with an older glibc.
+EOF
+
 tar -czf "$OUT" -C "$ROOT" \
   --exclude='./.git' \
   --exclude='./data' \
   --exclude='./build' \
   ./src ./cmake ./static ./CMakeLists.txt ./run.sh ./README.md ./DEV-OFFLINE.md \
-  ./offline/offline-build.sh ./offline/package-portable.sh \
-  ./offline/debs ./offline/runtime-libs \
+  ./OFFLINE-CENTOS9.md \
+  ./offline/offline-build.sh ./offline/package-portable.sh ./offline/common.sh \
+  ./offline/BUNDLE-INFO.txt ./offline/runtime-libs \
   ./bin ./.deps/install "${EXTRA[@]}"
 
 echo

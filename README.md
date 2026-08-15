@@ -3,11 +3,13 @@
 A small HTTP server built on [facebook/proxygen](https://github.com/facebook/proxygen)
 with **user signup, login, logout, and session auth**. It ships a tiny web UI and
 a JSON API, and stores accounts in **SQLite** with **PBKDF2-SHA256 hashed
-passwords**. This guide targets a **native build on Ubuntu**.
+passwords**. This guide targets a **native Linux build**.
 
 ## Requirements
 
-- Ubuntu 20.04 / 22.04 / 24.04 (or similar Linux; macOS also works)
+- **Ubuntu/Debian** (20.04 / 22.04 / 24.04) **or the RHEL 9 family** — CentOS
+  Stream 9, RHEL 9, Rocky 9, AlmaLinux 9. `build.sh` detects `apt` vs `dnf` and
+  installs the right packages either way.
 - `sudo` access (to install build packages)
 - **≥ 4 GB RAM** and some patience: Proxygen is compiled from source
 
@@ -27,10 +29,16 @@ chmod +x build.sh run.sh
 Open **http://localhost:8080**, sign up, log out, log back in. Accounts persist in
 `data/users.db`; sessions ride an `HttpOnly` cookie.
 
+> Targeting **CentOS Stream 9 / RHEL 9**? Read
+> **[OFFLINE-CENTOS9.md](OFFLINE-CENTOS9.md)** — those distros use glibc 2.34,
+> older than Ubuntu 22.04's 2.35, so bundles must be built on EL9 (a
+> `Dockerfile.el9` does this from Windows/macOS too).
+
 ### What `build.sh` does
 
-1. `sudo apt-get install …` — the packages this app links against
-   (`git cmake ninja-build build-essential python3 libsqlite3-dev libssl-dev`).
+1. Installs the packages this app links against — `apt-get install …` on
+   Ubuntu/Debian, or `dnf install …` (plus enabling **CRB** and **EPEL**) on the
+   RHEL 9 family. The lists live in [offline/common.sh](offline/common.sh).
 2. Clones `facebook/proxygen` into `.deps/proxygen-src` and builds it +
    dependencies into `.deps/install` via `getdeps.py`.
 3. Configures and builds this server with CMake into `build/`.
@@ -42,7 +50,7 @@ exists, so it only recompiles your app.
 
 ```bash
 PROXYGEN_REF=v2025.01.06.00 ./build.sh   # pin a specific Proxygen release
-SKIP_APT=1 ./build.sh                     # skip apt (packages already present)
+SKIP_PKGS=1 ./build.sh                    # skip apt/dnf (packages already present)
 JOBS=4 ./build.sh                         # limit parallelism (less RAM)
 PROXYGEN_PREFIX=/opt/pg ./build.sh        # install Proxygen elsewhere
 ```
@@ -55,9 +63,19 @@ to go offline is: do the networked build once on an online machine, then ship an
 artifact. There are three artifacts depending on what the recipient will do.
 
 > **Same-machine rule:** any prebuilt artifact only works on a machine with the
-> **same CPU architecture** and a **glibc no older** than the build machine's
-> (in practice: same Ubuntu major version). Compiled libraries don't port across
-> those. If in doubt, build on the oldest Ubuntu version you need to support.
+> **same CPU architecture** and a **glibc no older** than the build machine's.
+> glibc is forward-compatible only, so this direction matters:
+>
+> | Build host | glibc | Runs on |
+> | --- | --- | --- |
+> | CentOS Stream 9 / RHEL 9 / Rocky 9 / Alma 9 | 2.34 | EL9 **and** Ubuntu 22.04+ |
+> | Ubuntu 22.04 | 2.35 | Ubuntu 22.04+ only — **not** EL9 |
+> | Ubuntu 24.04 | 2.39 | Ubuntu 24.04+ only |
+>
+> Build on the **oldest** system you need to support. For CentOS 9 targets, that
+> means building on EL9 — see **[OFFLINE-CENTOS9.md](OFFLINE-CENTOS9.md)**.
+> Bundle filenames carry the distro tag (`…-el9.tar.gz`, `…-ubuntu22.04.tar.gz`)
+> and each bundle ships an `offline/BUNDLE-INFO.txt` recording where it was built.
 
 ### Mode 1 — "just run it" (best for sending to a friend)
 
@@ -68,14 +86,14 @@ internet, no installs**.
 ```bash
 # On your machine, after ./build.sh:
 ./offline/package-portable.sh
-# → proxygen-portable-amd64.tar.gz
+# → proxygen-portable-<distro>-<arch>.tar.gz   e.g. proxygen-portable-el9-x86_64.tar.gz
 ```
 
 Send that single file. Your friend runs:
 
 ```bash
-tar -xzf proxygen-portable-amd64.tar.gz
-cd proxygen-portable-amd64
+tar -xzf proxygen-portable-el9-x86_64.tar.gz
+cd proxygen-portable-el9-x86_64
 ./run.sh                      # → http://localhost:8080
 ```
 
@@ -85,20 +103,22 @@ Ships Proxygen **prebuilt** plus the source and an offline compiler, so the
 target can rebuild *this app* (not Proxygen) with no network.
 
 ```bash
-# Online machine:
-./offline/prefetch.sh          # → proxygen-offline-bundle.tar.gz
+# Online machine (must match the target's distro — see the same-machine rule):
+./offline/prefetch.sh          # → proxygen-offline-bundle-<distro>.tar.gz
 ```
 
 ```bash
 # Air-gapped machine:
-mkdir proxygen && tar -xzf proxygen-offline-bundle.tar.gz -C proxygen && cd proxygen
+mkdir proxygen && tar -xzf proxygen-offline-bundle-el9.tar.gz -C proxygen && cd proxygen
 chmod +x run.sh offline/*.sh
 ./run.sh                        # run the prebuilt binary immediately, OR
 ./offline/offline-build.sh      # recompile the app, then ./run.sh
 ```
 
-If the target already has `cmake`/`ninja`/`g++` + sqlite3/openssl dev headers:
-`SKIP_DEBS=1 ./offline/offline-build.sh`.
+The bundle carries `.deb`s or `.rpm`s depending on where it was built, and
+`offline-build.sh` installs whichever it finds. If the target already has
+`cmake`/`ninja`/`g++` + sqlite3/openssl dev headers:
+`SKIP_PKGS=1 ./offline/offline-build.sh`.
 
 ### Mode 3 — rebuild Proxygen from source offline (fully from-scratch)
 
@@ -123,7 +143,7 @@ REBUILD_PROXYGEN=1 ./offline/offline-build.sh && ./run.sh
 | `server` + bundled `lib/` (portable) | ✅ | — | — |
 | `.deps/install/` (Proxygen prebuilt) | — | ✅ | ✅ |
 | `bin/server` (app prebuilt) | — | ✅ | ✅ |
-| `offline/debs/` (offline compiler) | — | ✅ | ✅ |
+| `offline/debs/` or `offline/rpms/` (offline compiler) | — | ✅ | ✅ |
 | `.deps/proxygen-src` + `.deps/scratch` (sources) | — | — | ✅ |
 | `src/`, `static/`, `CMakeLists.txt`, `run.sh` | — | ✅ | ✅ |
 
@@ -220,8 +240,15 @@ Then: `sudo systemctl daemon-reload && sudo systemctl enable --now proxygen-auth
 ## Project layout
 
 ```
-build.sh              # native Ubuntu build (Proxygen + this app)
+build.sh              # native build, apt or dnf (Proxygen + this app)
 run.sh                # start the server
+offline/
+  common.sh           # distro detection + package lists shared by the scripts
+  prefetch.sh         # STAGE 1 (online): build + cache packages → bundle
+  offline-build.sh    # STAGE 2 (air-gapped): install packages + rebuild the app
+  package-portable.sh # run-only tarball (binary + libs + web UI)
+OFFLINE-CENTOS9.md    # CentOS Stream 9 / RHEL 9 (glibc 2.34) instructions
+Dockerfile.el9        # EL9 builder: makes CentOS 9 bundles from any OS
 CMakeLists.txt        # CMake build (links proxygen + sqlite3 + openssl)
 src/
   main.cpp            # Server setup: options, threads, signal handling
@@ -231,7 +258,7 @@ src/
 static/               # index.html, style.css, app.js  (the web UI)
 data/                 # SQLite database (created at runtime; git-ignored)
 .deps/                # Proxygen source + install prefix (git-ignored)
-Dockerfile, docker-compose.yml   # optional container build (not needed on Ubuntu)
+Dockerfile, docker-compose.yml   # optional Ubuntu container build
 ```
 
 ## Security notes

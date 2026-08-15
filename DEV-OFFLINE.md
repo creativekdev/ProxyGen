@@ -11,16 +11,19 @@ small application in `src/`.
 
 ## 0. Requirements
 
-- **Linux, x86-64**, Ubuntu version **>= the machine this was built on**
-  (if it runs, you're fine).
-- Build tools: either already installed (`cmake`, `ninja`/`make`, `g++`,
-  `libsqlite3-dev`, `libssl-dev`), **or** installed offline from the bundled
-  `.deb`s by the build script below. No internet needed either way.
+- **Linux, x86-64**, with a **glibc no older** than the machine this was built
+  on. `offline/BUNDLE-INFO.txt` records that machine's distro and glibc version;
+  compare with `ldd --version` here. (If it runs, you're fine.)
+- Build tools: either already installed (`cmake`, `ninja`/`make`, `g++`, plus
+  the sqlite3 and openssl development headers), **or** installed offline from
+  the packages bundled in `offline/debs` (Ubuntu/Debian) or `offline/rpms`
+  (CentOS Stream 9 / RHEL 9 / Rocky / Alma) by the build script below. No
+  internet needed either way.
 
 Extract the bundle first:
 
 ```bash
-mkdir proxygen && tar -xzf proxygen-offline-bundle.tar.gz -C proxygen
+mkdir proxygen && tar -xzf proxygen-offline-bundle-*.tar.gz -C proxygen
 cd proxygen
 chmod +x run.sh offline/*.sh
 ```
@@ -50,8 +53,8 @@ Open **http://localhost:8080**. Sign up, log in, log out. Accounts are stored in
    ./offline/offline-build.sh
    ```
 
-   - If your machine already has the build tools, skip the bundled `.deb`s:
-     `SKIP_DEBS=1 ./offline/offline-build.sh`
+   - If your machine already has the build tools, skip the bundled packages:
+     `SKIP_PKGS=1 ./offline/offline-build.sh`
 3. Run your new build:
 
    ```bash
@@ -155,16 +158,24 @@ Whoever receives it just runs `./run.sh` (no build needed).
 
 - **`error while loading shared libraries: libfolly…`** → run via `./run.sh`
   (it sets the library path). If it persists, your glibc is older than the build
-  machine's — you'll need a bundle built on your Ubuntu version.
+  machine's — you'll need a bundle built on your distro version.
+- **`version 'GLIBC_2.35' not found`** → the bundle was built on a newer-glibc
+  distro (e.g. Ubuntu 22.04) than this machine (e.g. CentOS Stream 9 / RHEL 9,
+  glibc 2.34). See `OFFLINE-CENTOS9.md` — it has both the quick unblock and how
+  to build a proper EL9 bundle.
+- **`sudo dpkg: command not found` on CentOS/RHEL** → that bundle carries
+  Ubuntu `.deb`s. You need an EL9-built bundle (`offline/rpms/`); see
+  `OFFLINE-CENTOS9.md`.
 - **`cmake` can't find Proxygen / `find_package(proxygen)` fails** → the prebuilt
   prefix has absolute paths from the original build machine. Fixes, easiest first:
   1. Extract the bundle to the **same absolute path** it was built at (ask the
      sender what that was), or
   2. If the bundle has sources, rebuild Proxygen locally:
      `REBUILD_PROXYGEN=1 ./offline/offline-build.sh`.
-- **`sudo dpkg` errors about dependencies** → your machine is missing a base
-  package the bundled `.deb`s expect. If you already have build tools, just use
-  `SKIP_DEBS=1 ./offline/offline-build.sh`.
-- **No compiler at all and no bundled `.deb`s** → you need `build-essential`,
-  `cmake`, `ninja-build`, `libsqlite3-dev`, `libssl-dev` installed some other way;
-  they can't be fetched offline.
+- **`dpkg`/`rpm` errors about dependencies** → your machine is missing a base
+  package the bundled packages expect. If you already have build tools, just use
+  `SKIP_PKGS=1 ./offline/offline-build.sh`.
+- **No compiler at all and no bundled packages** → you need
+  `build-essential cmake ninja-build libsqlite3-dev libssl-dev` (Ubuntu) or
+  `gcc-c++ make cmake ninja-build sqlite-devel openssl-devel` (EL9) installed
+  some other way; they can't be fetched offline.

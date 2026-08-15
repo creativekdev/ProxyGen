@@ -4,6 +4,15 @@ data/
 *.db
 *.db-wal
 *.db-shm
-README.md
 docker-compose.yml
 .gitignore
+
+# Local build artifacts — never send these to the daemon as build context.
+# (proxygen-offline-bundle-*.tar.gz is ~2 GB; .deps/ is larger still.)
+.deps/
+bin/
+offline/debs/
+offline/rpms/
+offline/runtime-libs/
+*.tar.gz
+proxygen-portable-*/

@@ -1,0 +1,116 @@
+# syntax=docker/dockerfile:1
+#
+# CentOS Stream 9 / RHEL 9 builder — glibc 2.34.
+#
+# WHY THIS EXISTS: a binary (and its bundled libraries) built on Ubuntu 22.04
+# links against glibc 2.35. CentOS Stream 9, RHEL 9, Rocky 9 and AlmaLinux 9 all
+# ship glibc 2.34, so such a bundle fails to load there. Building inside this
+# image produces artifacts that run on any of those, and on anything newer.
+#
+# Three things you can do with it:
+#
+#   1. Produce the OFFLINE BUNDLE for an air-gapped CentOS 9 box (the usual goal;
+#      works from Windows with Docker Desktop — no CentOS machine needed):
+#        docker build -f Dockerfile.el9 --target bundle -o type=local,dest=./out .
+#      → ./out/proxygen-offline-bundle-el9.tar.gz
+#
+#   2. Produce the small "just run it" PORTABLE bundle:
+#        docker build -f Dockerfile.el9 --target portable -o type=local,dest=./out .
+#      → ./out/proxygen-portable-el9-x86_64.tar.gz
+#
+#   3. Run the server in a container:
+#        docker build -f Dockerfile.el9 -t proxygen-auth:el9 .
+#        docker run --rm -p 8080:8080 -v proxygen-data:/app/data proxygen-auth:el9
+#
+# The getdeps step compiles folly/wangle/fizz/mvfst/proxygen from source: the
+# first build takes ~30-60 min and wants >=4 GB RAM given to Docker. It is
+# cached afterwards, so app-only rebuilds are fast.
+#
+# Rocky/Alma instead of CentOS Stream (same glibc, same result):
+#   docker build -f Dockerfile.el9 --build-arg BASE_IMAGE=rockylinux:9 …
+
+ARG BASE_IMAGE=quay.io/centos/centos:stream9
+
+# =============================================================================
+# Stage 1 — toolchain
+# =============================================================================
+FROM ${BASE_IMAGE} AS toolchain
+
+# getdeps shells out to the package manager with sudo when it isn't root-aware;
+# keeping sudo installed avoids that failure mode inside the container.
+RUN dnf -y install sudo bash && dnf clean all
+
+WORKDIR /app
+# The package list + repo setup live in one place so the container and a native
+# CentOS build install exactly the same things.
+COPY offline/common.sh ./offline/common.sh
+RUN . ./offline/common.sh \
+ && enable_rpm_repos \
+ && pkg_install $(build_pkgs) \
+ && dnf clean all
+
+# =============================================================================
+# Stage 2 — build Proxygen + this app (the slow, cached layer)
+# =============================================================================
+FROM toolchain AS build
+ARG PROXYGEN_REF=main
+
+COPY build.sh CMakeLists.txt ./
+COPY cmake ./cmake
+COPY src ./src
+# SKIP_PKGS=1: the toolchain stage already installed everything.
+RUN SKIP_PKGS=1 PROXYGEN_REF="${PROXYGEN_REF}" ./build.sh
+
+COPY static ./static
+COPY run.sh ./
+
+# =============================================================================
+# Stage 3a — the offline dev bundle (source + prebuilt Proxygen + .rpm cache)
+# =============================================================================
+FROM build AS bundle-build
+COPY offline ./offline
+COPY README.md DEV-OFFLINE.md OFFLINE-CENTOS9.md ./
+RUN chmod +x offline/*.sh run.sh build.sh && SKIP_PKGS=1 ./offline/prefetch.sh
+
+FROM scratch AS bundle
+COPY --from=bundle-build /app/proxygen-offline-bundle-*.tar.gz /
+
+# =============================================================================
+# Stage 3b — the small run-only portable bundle
+# =============================================================================
+FROM build AS portable-build
+COPY offline ./offline
+RUN chmod +x offline/*.sh && ./offline/package-portable.sh
+
+FROM scratch AS portable
+COPY --from=portable-build /app/proxygen-portable-*.tar.gz /
+
+# =============================================================================
+# Stage 4 — runtime image (default target)
+# =============================================================================
+FROM ${BASE_IMAGE} AS runtime
+
+# Runtime shared libraries only — no compilers, no headers. Best effort per
+# package: the binary links most of its dependency closure statically.
+COPY offline/common.sh /tmp/common.sh
+RUN . /tmp/common.sh \
+ && enable_rpm_repos \
+ && pkg_install sqlite-libs openssl-libs libevent gflags glog libsodium \
+      double-conversion snappy libzstd lz4-libs bzip2-libs zlib libunwind \
+ && dnf clean all && rm -f /tmp/common.sh
+
+WORKDIR /app
+COPY --from=build /app/build/server ./build/server
+# The whole prefix, because the binary's RPATH points into its per-dependency
+# subdirectories. It is mostly static archives, so this image is fat — use the
+# `portable` target above if you want a small artifact instead.
+COPY --from=build /app/.deps/install ./.deps/install
+COPY static ./static
+
+ENV LD_LIBRARY_PATH=/app/.deps/install/lib:/app/.deps/install/lib64
+
+VOLUME ["/app/data"]
+EXPOSE 8080
+
+ENTRYPOINT ["/app/build/server"]
+CMD ["--host=0.0.0.0", "--port=8080", "--db=/app/data/users.db", "--static_dir=/app/static"]
