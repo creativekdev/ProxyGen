@@ -99,8 +99,37 @@ This is the full walkthrough: build on **your online CentOS box**, pack there,
 hand the result to an **air-gapped CentOS box**.
 
 **What the build machine needs:** CentOS Stream 9 (or RHEL/Rocky/Alma 9),
-`x86_64`, **internet**, `sudo`, **≥ 4 GB RAM**, **≥ 25 GB free disk**, and
-30–60 minutes. It must be the *same major version* as your friend's machine.
+`x86_64`, **internet**, `sudo`, **≥ 4 GB RAM**, and 30–60 minutes. It must be
+the *same major version* as your friend's machine.
+
+Disk is the constraint worth planning for. Peak usage, in rough numbers:
+
+| | Size | Deletable after? |
+| --- | --- | --- |
+| getdeps scratch (source + build trees) | ~12–15 GB | **yes** |
+| `.deps/install` prefix | ~3 GB — or ~0.5 GB with `SLIM=1` | no (ships in the bundle) |
+| `offline/rpms/` + `bin/` + `build/` | ~1 GB | no |
+| the bundle tarball itself | ~2 GB — or ~0.5 GB with `SLIM=1` | it *is* the output |
+
+**Comfortable: 25 GB free. Workable: ~18 GB**, using the low-disk recipe below.
+`SLIM=1` strips DWARF debug info from the prefix and binary (they still link
+and run; you just can't step into folly/proxygen with gdb).
+
+#### Low-disk recipe
+
+Build first, throw away the scratch, and only then package — so the big scratch
+and the big tarball never exist at the same time:
+
+```bash
+export SCRATCH=$HOME/pgscratch     # put the scratch where you can find it
+JOBS=2 ./build.sh                  # the slow part, ~12-15 GB of scratch
+rm -rf "$SCRATCH"                  # reclaim it — the prefix is already built
+unset SCRATCH
+SLIM=1 ./offline/prefetch.sh       # skips the build (prefix exists), just packs
+```
+
+Only skip the `rm -rf` if you intend `WITH_SOURCES=1` (rebuilding Proxygen
+itself offline), which needs the scratch shipped in the bundle.
 
 #### Step 1 — get the project onto the CentOS box
 

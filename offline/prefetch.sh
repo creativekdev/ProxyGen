@@ -57,6 +57,25 @@ mkdir -p "$ROOT/bin"
 cp -f "$ROOT/build/server" "$ROOT/bin/server"
 
 # ---------------------------------------------------------------------------
+# 1b. SLIM=1 — drop DWARF debug info from the prefix and the binary. getdeps
+#     builds everything with debug symbols on, which is most of the bulk: this
+#     typically takes .deps/install from several GB to a few hundred MB and the
+#     final bundle from ~2 GB to a fraction of that. --strip-debug keeps the
+#     symbol tables, so the static archives still link fine on the target; you
+#     only lose the ability to debug INTO folly/proxygen with gdb.
+#     Use it when disk or transfer size is tight.
+# ---------------------------------------------------------------------------
+if [ "${SLIM:-0}" = "1" ]; then
+  echo "==> [1b/4] SLIM=1 — stripping debug symbols…"
+  echo "    before: $(du -sh "$ROOT/.deps/install" 2>/dev/null | cut -f1)"
+  find "$ROOT/.deps/install" -type f \
+       \( -name '*.a' -o -name '*.so' -o -name '*.so.*' \) -print0 \
+    | xargs -0 -r -n 20 strip --strip-debug 2>/dev/null || true
+  strip --strip-debug "$ROOT/bin/server" 2>/dev/null || true
+  echo "    after:  $(du -sh "$ROOT/.deps/install" 2>/dev/null | cut -f1)"
+fi
+
+# ---------------------------------------------------------------------------
 # 2. Download the package closure needed to recompile the app on the offline
 #    box. (Only needed if the target lacks cmake/ninja/g++/dev headers.)
 #    The package list lives in offline/common.sh, one per distro family.
