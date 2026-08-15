@@ -42,22 +42,26 @@ glibc_version() { ldd --version 2>/dev/null | head -1 | grep -o '[0-9]\+\.[0-9]\
 # proxygen pull most of these in transitively; without them a rebuild fails
 # with "cannot find -lXXX".
 DEB_BUILD_PKGS="git cmake ninja-build build-essential g++ python3 python3-pip
-  pkg-config ca-certificates libsqlite3-dev libssl-dev libc-ares-dev
-  libevent-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev libsnappy-dev
-  libdwarf-dev libaio-dev libsodium-dev libdouble-conversion-dev
-  libgflags-dev libgoogle-glog-dev"
+  python3-dev pkg-config ca-certificates libsqlite3-dev libssl-dev
+  libc-ares-dev libevent-dev zlib1g-dev libbz2-dev liblzma-dev liblz4-dev
+  libzstd-dev libsnappy-dev libdwarf-dev libaio-dev libsodium-dev
+  libdouble-conversion-dev libgflags-dev libgoogle-glog-dev libicu-dev"
 
 # EL9 equivalents. Several of these live outside BaseOS/AppStream:
 #   crb  → libzstd-devel, lz4-devel, snappy-devel, libdwarf-devel, libunwind-devel
 #   epel → ninja-build, gflags-devel, glog-devel, libsodium-devel,
 #          double-conversion-devel
 # enable_rpm_repos() turns both on before installing.
+# python3-devel, xz-devel and libicu-devel are needed by BOOST, which getdeps
+# compiles from source: Boost.Python wants the Python headers, Boost.Iostreams
+# wants lzma, Boost.Locale wants ICU. Without them boost's b2 aborts with
+# "...failed updating N targets..." and the whole build stops there.
 RPM_BUILD_PKGS="git cmake ninja-build gcc gcc-c++ make python3 python3-pip
-  pkgconf-pkg-config ca-certificates which patch xz zip unzip perl-core
-  sqlite-devel openssl-devel c-ares-devel libevent-devel zlib-devel
-  bzip2-devel lz4-devel libzstd-devel snappy-devel libdwarf-devel
+  python3-devel pkgconf-pkg-config ca-certificates which patch xz zip unzip
+  perl-core sqlite-devel openssl-devel c-ares-devel libevent-devel zlib-devel
+  bzip2-devel xz-devel lz4-devel libzstd-devel snappy-devel libdwarf-devel
   libunwind-devel libaio-devel libsodium-devel double-conversion-devel
-  gflags-devel glog-devel"
+  gflags-devel glog-devel libicu-devel"
 
 # The list for the family we're actually on.
 build_pkgs() {
