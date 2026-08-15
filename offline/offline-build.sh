@@ -46,9 +46,12 @@ if [ "${REBUILD_PROXYGEN:-0}" = "1" ]; then
 fi
 
 echo "==> Verifying the Proxygen prefix…"
-if [ ! -f "$PREFIX/include/proxygen/httpserver/HTTPServer.h" ]; then
-  echo "ERROR: Proxygen prefix not found at $PREFIX" >&2
-  echo "       Did you extract the FULL bundle (including .deps/install)?" >&2
+# getdeps installs each library into its own subdir (e.g. <prefix>/proxygen),
+# so probe for proxygen-config.cmake anywhere under the prefix rather than a
+# fixed header path.
+if [ ! -d "$PREFIX" ] || ! find "$PREFIX" -name 'proxygen-config.cmake' 2>/dev/null | grep -q .; then
+  echo "ERROR: Proxygen prefix not found under $PREFIX" >&2
+  echo "       Did you extract the FULL bundle (including the hidden .deps/ dir)?" >&2
   exit 1
 fi
 
